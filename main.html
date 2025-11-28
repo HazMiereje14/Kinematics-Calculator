@@ -77,7 +77,7 @@
     button.calc { background:var(--success); color:#fff; }
 
     /* Output area */
-    .output-area { display:flex; flex-direction:column; gap:12px; height:calc(100vh - 220px); }
+    .output-area { display:flex; flex-direction:column; gap:12px; max-height:300px; overflow-y:auto; transition: max-height 0.25s ease; }
     .output-header { background:linear-gradient(90deg,#34495e,#2c3e50); color:#fff; padding:12px; border-radius:10px 10px 0 0; font-weight:800; }
     .output-box { flex:1; background:#fbfdff; border-radius:0 0 10px 10px; border:1px solid #eef4fb; padding:14px; overflow:auto; font-family: 'Fira Code', Consolas, monospace; white-space:pre-line; color:#133; }
     .finals { background:#fff; border:1px solid #eef3f8; padding:12px; border-radius:8px; font-family:Consolas,monospace; min-height:70px; }
@@ -204,7 +204,6 @@
   <footer>Physics Calculator · Modern Clean UI · Step-by-step</footer>
 
   <script>
-    // Modern Clean UI behavior and solvers (Option B step spacing preserved)
     (function(){
       const g = 9.8;
       const $ = id => document.getElementById(id);
@@ -213,7 +212,6 @@
       $("startBtn").addEventListener("click", ()=> {
         $("mainMenu").style.display = "none";
         $("app").style.display = "block";
-        // focus first input
         setTimeout(()=> { const el = $("kin_u"); if(el) el.focus(); }, 80);
       });
 
@@ -235,24 +233,23 @@
         });
       });
 
-      // Clear button
       $("clearBtn").addEventListener("click", clearAll);
       function clearAll(){
         document.querySelectorAll("input").forEach(i => i.value = "");
         clearOutput();
-        // bring focus to first input
         const first = document.querySelector('[data-panel]:not([style*="display:none"]) input');
         if(first) first.focus();
       }
 
-      // Output helpers
       function clearOutput(){
         $("output").innerHTML = "";
         $("finals").textContent = "";
+        // reset max-height
+        const outArea = $("output").parentElement;
+        outArea.style.maxHeight = "300px";
       }
 
       function pushStep(title, body){
-        // create a step block for nicer UI
         const out = $("output");
         const div = document.createElement("div");
         div.className = "step";
@@ -263,6 +260,12 @@
         div.appendChild(h);
         div.appendChild(p);
         out.appendChild(div);
+
+        // fully auto-expand until max viewport height
+        const rect = out.parentElement.getBoundingClientRect();
+        const viewportHeight = window.innerHeight - rect.top - 20; // 20px padding
+        out.parentElement.style.maxHeight = viewportHeight + "px";
+
         out.scrollTop = out.scrollHeight;
       }
 
@@ -285,7 +288,6 @@
         return Number.isFinite(n) ? n : null;
       }
 
-      // Calculation entry
       $("calcBtn").addEventListener("click", ()=> {
         clearOutput();
         const active = document.querySelector(".tab.active").dataset.tab;
@@ -303,187 +305,73 @@
             t = parse($("kin_t").value),
             s = parse($("kin_s").value);
 
-        let stepCount = 0;
+        const vars = {u,v,a,t,s};
+        const maxIter = 10;
+        let iter = 0, prevUnknowns = null;
 
-        // Step 1: v = u + a t
-        if(v == null && u != null && a != null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Final velocity (v = u + a·t)`,
-            `Formula: v = u + a·t\nSubstitute: u = ${u.toFixed(6)}, a = ${a.toFixed(6)}, t = ${t.toFixed(6)}\nCompute: v = ${(u + a*t).toFixed(6)} m/s`);
-          v = u + a*t;
+        while(iter++<maxIter){
+          const unknowns = Object.keys(vars).filter(k=> vars[k]==null);
+          if(unknowns.length===0 || JSON.stringify(unknowns)===JSON.stringify(prevUnknowns)) break;
+          prevUnknowns = unknowns;
+
+          // Equations
+          if(vars.u!=null && vars.a!=null && vars.t!=null && vars.v==null) { vars.v = vars.u + vars.a*vars.t; pushStep("v = u + a*t", `v = ${vars.u} + ${vars.a}*${vars.t} = ${vars.v}`); }
+          if(vars.v!=null && vars.a!=null && vars.t!=null && vars.u==null) { vars.u = vars.v - vars.a*vars.t; pushStep("u = v - a*t", `u = ${vars.v} - ${vars.a}*${vars.t} = ${vars.u}`); }
+          if(vars.u!=null && vars.v!=null && vars.t!=null && vars.a==null) { vars.a = (vars.v - vars.u)/vars.t; pushStep("a = (v - u)/t", `a = (${vars.v} - ${vars.u})/${vars.t} = ${vars.a}`); }
+          if(vars.u!=null && vars.a!=null && vars.v!=null && vars.t==null) { vars.t = (vars.v - vars.u)/vars.a; pushStep("t = (v - u)/a", `t = (${vars.v} - ${vars.u})/${vars.a} = ${vars.t}`); }
+          if(vars.u!=null && vars.a!=null && vars.t!=null && vars.s==null) { vars.s = vars.u*vars.t + 0.5*vars.a*vars.t*vars.t; pushStep("s = u*t + 0.5*a*t²", `s = ${vars.u}*${vars.t} + 0.5*${vars.a}*${vars.t}² = ${vars.s}`); }
+          if(vars.v!=null && vars.u!=null && vars.a!=null && vars.s==null) { vars.s = (vars.v*vars.v - vars.u*vars.u)/(2*vars.a); pushStep("s = (v² - u²)/(2*a)", `s = (${vars.v}² - ${vars.u}²)/(2*${vars.a}) = ${vars.s}`); }
+          if(vars.s!=null && vars.u!=null && vars.t!=null && vars.a==null) { vars.a = 2*(vars.s - vars.u*vars.t)/(vars.t*vars.t); pushStep("a = 2*(s - u*t)/t²", `a = 2*(${vars.s} - ${vars.u}*${vars.t})/${vars.t}² = ${vars.a}`); }
+          if(vars.s!=null && vars.v!=null && vars.t!=null && vars.u==null) { vars.u = (2*vars.s/vars.t) - vars.v; pushStep("u = 2*s/t - v", `u = 2*${vars.s}/${vars.t} - ${vars.v} = ${vars.u}`); }
         }
 
-        // Step 2: s = u t + 0.5 a t^2
-        if(s == null && u != null && t != null && a != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Displacement (s = u·t + ½·a·t²)`,
-            `Formula: s = u·t + ½·a·t²\nSubstitute: u = ${u.toFixed(6)}, t = ${t.toFixed(6)}, a = ${a.toFixed(6)}\nCompute: s = ${(u*t + 0.5*a*Math.pow(t,2)).toFixed(6)} m`);
-          s = u*t + 0.5*a*Math.pow(t,2);
-        }
-
-        // Step 3: u = v - a t
-        if(u == null && v != null && a != null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Initial velocity (u = v - a·t)`,
-            `Formula: u = v - a·t\nSubstitute: v = ${v.toFixed(6)}, a = ${a.toFixed(6)}, t = ${t.toFixed(6)}\nCompute: u = ${(v - a*t).toFixed(6)} m/s`);
-          u = v - a*t;
-        }
-
-        // Step 4: a = (v - u) / t
-        if(a == null && v != null && u != null && t != null && t !== 0){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Acceleration (a = (v - u) / t)`,
-            `Formula: a = (v - u) / t\nSubstitute: v = ${v.toFixed(6)}, u = ${u.toFixed(6)}, t = ${t.toFixed(6)}\nCompute: a = ${((v - u)/t).toFixed(6)} m/s²`);
-          a = (v - u)/t;
-        }
-
-        // Step 5: t = (v - u)/a
-        if(t == null && v != null && u != null && a != null && a !== 0){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Time (t = (v - u) / a)`,
-            `Formula: t = (v - u) / a\nSubstitute: v = ${v.toFixed(6)}, u = ${u.toFixed(6)}, a = ${a.toFixed(6)}\nCompute: t = ${((v - u)/a).toFixed(6)} s`);
-          t = (v - u)/a;
-        }
-
-        if(stepCount === 0){
-          pushStep("No steps executed", "No applicable formula could be applied with the current inputs. Please provide more knowns (e.g. u, a, t or u, v, a etc.).");
-        }
-
-        showFinals({u,v,a,t,s});
+        showFinals(vars);
       }
 
       /* ---------------- FREE FALL ---------------- */
       function solveFreeFall(){
-        let u = parse($("ff_u").value),
-            v = parse($("ff_v").value),
-            t = parse($("ff_t").value),
-            h = parse($("ff_h").value);
+        let u=parse($("ff_u").value), v=parse($("ff_v").value), t=parse($("ff_t").value), h=parse($("ff_h").value);
+        let vars={u,v,t,h};
+        let maxIter=10, iter=0, prevUnknowns=null;
+        while(iter++<maxIter){
+          const unknowns = Object.keys(vars).filter(k=> vars[k]==null);
+          if(unknowns.length===0 || JSON.stringify(unknowns)===JSON.stringify(prevUnknowns)) break;
+          prevUnknowns=unknowns;
 
-        let stepCount = 0;
-
-        // Step 1: v = u + g t
-        if(v == null && u != null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Final velocity (v = u + g·t)`,
-            `Formula: v = u + g·t\nSubstitute: u = ${u.toFixed(6)}, g = ${g}, t = ${t.toFixed(6)}\nCompute: v = ${(u + g*t).toFixed(6)} m/s`);
-          v = u + g*t;
+          if(vars.u!=null && vars.t!=null && vars.v==null){ vars.v = vars.u + g*vars.t; pushStep("v = u + g*t", `v = ${vars.u}+${g}*${vars.t} = ${vars.v}`); }
+          if(vars.v!=null && vars.u!=null && vars.t==null){ vars.t = (vars.v - vars.u)/g; pushStep("t = (v - u)/g", `t = (${vars.v}-${vars.u})/${g} = ${vars.t}`); }
+          if(vars.u!=null && vars.t!=null && vars.h==null){ vars.h = vars.u*vars.t + 0.5*g*vars.t*vars.t; pushStep("h = u*t + 0.5*g*t²", `h = ${vars.u}*${vars.t}+0.5*${g}*${vars.t}² = ${vars.h}`); }
+          if(vars.v!=null && vars.u!=null && vars.h==null){ vars.h = (vars.v*vars.v - vars.u*vars.u)/(2*g); pushStep("h = (v² - u²)/(2*g)", `h = (${vars.v}² - ${vars.u}²)/(2*${g}) = ${vars.h}`); }
         }
-
-        // Step 2: v^2 = u^2 + 2 g h  (solve for v)
-        if(v == null && u != null && h != null){
-          stepCount++;
-          const inside = u*u + 2*g*h;
-          if(inside >= 0){
-            pushStep(`Step ${stepCount}: Final velocity (v = √(u² + 2·g·h))`,
-              `Formula: v² = u² + 2·g·h\nSubstitute: u = ${u.toFixed(6)}, g = ${g}, h = ${h.toFixed(6)}\nCompute: v = ${Math.sqrt(inside).toFixed(6)} m/s`);
-            v = Math.sqrt(inside);
-          } else {
-            pushStep(`Step ${stepCount}: Error`, `Inside sqrt negative: u² + 2·g·h = ${inside.toFixed(6)}. Check signs/inputs.`);
-          }
-        }
-
-        // Step 3: t = (v - u)/g
-        if(t == null && v != null && u != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Time (t = (v - u) / g)`,
-            `Formula: t = (v - u)/g\nSubstitute: v = ${v.toFixed(6)}, u = ${u.toFixed(6)}, g = ${g}\nCompute: t = ${((v - u)/g).toFixed(6)} s`);
-          t = (v - u)/g;
-        }
-
-        // Step 4: h = u t + 0.5 g t^2
-        if(h == null && u != null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Height (h = u·t + ½·g·t²)`,
-            `Formula: h = u·t + ½·g·t²\nSubstitute: u = ${u.toFixed(6)}, t = ${t.toFixed(6)}, g = ${g}\nCompute: h = ${(u*t + 0.5*g*Math.pow(t,2)).toFixed(6)} m`);
-          h = u*t + 0.5*g*Math.pow(t,2);
-        }
-
-        if(stepCount === 0){
-          pushStep("No steps executed", "No applicable free-fall formula could be applied. Provide at least two knowns (e.g., u and t; or u and h).");
-        }
-
-        showFinals({u,v,t,h});
+        showFinals(vars);
       }
 
-      /* ---------------- PROJECTILE (horizontal) ---------------- */
+      /* ---------------- HORIZONTAL PROJECTILE ---------------- */
       function solveProjectile(){
-        let t = parse($("pr_t").value),
-            d = parse($("pr_d").value),
-            vx = parse($("pr_v").value);
+        let t=parse($("pr_t").value), d=parse($("pr_d").value), v=parse($("pr_v").value);
+        let vars={t,d,v}, maxIter=10, iter=0, prevUnknowns=null;
+        while(iter++<maxIter){
+          const unknowns = Object.keys(vars).filter(k=> vars[k]==null);
+          if(unknowns.length===0 || JSON.stringify(unknowns)===JSON.stringify(prevUnknowns)) break;
+          prevUnknowns=unknowns;
 
-        let stepCount = 0;
-
-        // Step 1: d = 0.5 g t^2
-        if(d == null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Vertical drop (d = ½·g·t²)`,
-            `Formula: d = ½·g·t²\nSubstitute: g = ${g}, t = ${t.toFixed(6)}\nCompute: d = ${(0.5*g*Math.pow(t,2)).toFixed(6)} m`);
-          d = 0.5*g*Math.pow(t,2);
+          if(vars.d!=null && vars.t!=null && vars.v==null){ vars.v = vars.d/vars.t; pushStep("v = d/t", `v = ${vars.d}/${vars.t} = ${vars.v}`); }
+          if(vars.v!=null && vars.t!=null && vars.d==null){ vars.d = vars.v*vars.t; pushStep("d = v*t", `d = ${vars.v}*${vars.t} = ${vars.d}`); }
+          if(vars.d!=null && vars.v!=null && vars.t==null){ vars.t = vars.d/vars.v; pushStep("t = d/v", `t = ${vars.d}/${vars.v} = ${vars.t}`); }
         }
-
-        // Step 2: t = sqrt(2d/g)
-        if(t == null && d != null && d >= 0){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Time (t = √(2·d / g))`,
-            `Formula: t = √(2·d / g)\nSubstitute: d = ${d.toFixed(6)}, g = ${g}\nCompute: t = ${Math.sqrt(2*d/g).toFixed(6)} s`);
-          t = Math.sqrt(2*d/g);
-        }
-
-        // Step 3: horizontal distance dx = vx * t
-        if(vx != null && t != null){
-          stepCount++;
-          pushStep(`Step ${stepCount}: Horizontal distance (x = vₓ·t)`,
-            `Formula: x = vₓ·t\nSubstitute: vₓ = ${vx.toFixed(6)}, t = ${t.toFixed(6)}\nCompute: x = ${(vx*t).toFixed(6)} m`);
-        }
-
-        if(stepCount === 0){
-          pushStep("No steps executed", "No applicable horizontal-projectile formula could be applied. Provide at least (t or d) and/or horizontal velocity vₓ.");
-        }
-
-        showFinals({t,d,vx});
+        showFinals(vars);
       }
 
       /* ---------------- ANGLED PROJECTILE ---------------- */
       function solveAngleProjectile(){
-        let u = parse($("ag_u").value),
-            ang = parse($("ag_angle").value);
-
-        if(u == null || ang == null){
-          pushStep("Error", "Please enter both initial speed (u) and angle (degrees).");
-          showFinals({});
-          return;
-        }
-
-        const rad = ang * Math.PI / 180;
-        const vx = u * Math.cos(rad);
-        const vy = u * Math.sin(rad);
-
-        // Step 1: Decompose
-        pushStep("Step 1: Decompose velocity",
-          `Formula: vₓ = u·cosθ, vᵧ = u·sinθ\nSubstitute: u = ${u.toFixed(6)}, θ = ${ang.toFixed(6)}°\nCompute: vₓ = ${vx.toFixed(6)} m/s, vᵧ = ${vy.toFixed(6)} m/s`);
-
-        // Step 2: time of flight
-        const t = (2 * vy) / g;
-        pushStep("Step 2: Time of flight",
-          `Formula: t = 2·vᵧ / g\nSubstitute: vᵧ = ${vy.toFixed(6)}, g = ${g}\nCompute: t = ${t.toFixed(6)} s`);
-
-        // Step 3: Range
-        const R = vx * t;
-        pushStep("Step 3: Range",
-          `Formula: R = vₓ·t\nSubstitute: vₓ = ${vx.toFixed(6)}, t = ${t.toFixed(6)}\nCompute: R = ${R.toFixed(6)} m`);
-
-        // Step 4: Max height
-        const H = (vy*vy) / (2*g);
-        pushStep("Step 4: Maximum height",
-          `Formula: H = vᵧ² / (2·g)\nSubstitute: vᵧ = ${vy.toFixed(6)}, g = ${g}\nCompute: H = ${H.toFixed(6)} m`);
-
-        showFinals({u,ang,vx,vy,t,R,H});
+        let u=parse($("ag_u").value), theta=parse($("ag_angle").value);
+        let vars={u,theta};
+        if(u!=null && theta!=null) pushStep("Initial velocity & angle", `u = ${u}, θ = ${theta}°`);
+        showFinals(vars);
       }
 
-      // on load, show main menu
-      clearOutput();
-      // (app hidden by default)
     })();
   </script>
+
 </body>
 </html>
